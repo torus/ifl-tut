@@ -154,16 +154,26 @@ class Iseq iseq where
 data Iseqrep = INil
              | IStr String
              | IAppend Iseqrep Iseqrep
+             | IIndent Iseqrep
+             | INewline
              deriving (Show)
 
 instance Iseq Iseqrep where
-    iNil = INil
-    iStr = IStr
-    iAppend = IAppend
+    iNil         = INil
+    iStr         = IStr
+    iAppend      = IAppend
+    iDisplay seq = flatten 0 [(seq, 0)]
+    iIndent seq  = IIndent seq
+    iNewline     = INewline
 
 pprExpr :: CoreExpr -> Iseqrep
 pprExpr (ENum n)    = iStr (show n)
 pprExpr (EVar v)    = iStr v
+
+-- 1.5.5
+pprExpr (EAp (EAp (EVar "+") e1) e2)
+  = iConcat [ pprAExpr e1, iStr " + ", pprAExpr e2 ]
+
 pprExpr (EAp e1 e2) = pprExpr e1 `iAppend` iStr " " `iAppend` pprAExpr e2
 
 pprExpr (ELet isrec defns expr)
@@ -175,12 +185,15 @@ pprExpr (ELet isrec defns expr)
         keyword | not isrec = "let"
                 | otherwise = "letrec"
 
-pprExpr (ECase e as) = iStr "case" `iAppend` pprExpr e `iAppend` iConcat (map alter as)
+pprExpr (ECase e as)
+  = iStr "case" `iAppend` pprExpr e `iAppend` iConcat (map alter as)
     where
         alter (n, args, e) = iStr (show n) `iAppend` iInterleave (iStr " ") (map iStr args) `iAppend` pprExpr e
 
 pprExpr (EConstr n m) = iStr "Pack{" `iAppend` iInterleave (iStr ",") [iStr (show n), iStr (show m)] `iAppend` iStr "}"
 pprExpr (ELam as e) = iStr "\\" `iAppend` iInterleave (iStr " ") (map iStr as) `iAppend` iStr " . " `iAppend` pprExpr e
+
+
 
 pprDefns :: [(Name, CoreExpr)] -> Iseqrep
 pprDefns defns = iInterleave sep (map pprDefn defns)
@@ -205,12 +218,34 @@ iInterleave sep [] = iNil
 iInterleave sep [seq] = seq
 iInterleave sep (seq : seqs) = seq `iAppend` (sep `iAppend` iInterleave sep seqs)
 
-pprint prog = iDisplay (pprProgram prog)
-
-pprProgram :: p -> Iseqrep
-pprProgram p = undefined
-
 {-
 >>> pprExpr $ EAp (EVar "f") (EVar "x")
 IAppend (IStr "f") (IAppend (IStr " ") (IStr "x"))
+-}
+
+space n = replicate n ' '
+
+flatten :: Int -> [(Iseqrep, Int)] -> String
+
+flatten col [] = ""
+flatten col ((INil, indent) : seqs) = flatten col seqs
+flatten col ((IStr s, indent) : seqs) = s ++ flatten col seqs
+flatten col ((IAppend seq1 seq2, indent) : seqs) = flatten col ((seq1, indent) : (seq2, indent) : seqs)
+flatten col ((INewline, indent) : seqs) = '\n' : (space indent ++ flatten indent seqs)
+flatten col ((IIndent seq, indent) : seqs) = flatten col ((seq, col) : seqs)
+
+pprint prog = iDisplay (pprProgram prog)
+
+pprProgram :: CoreProgram -> Iseqrep
+pprProgram [] = INil
+pprProgram ds
+  = iInterleave (iStr " ;" `iAppend` iNewline) $ map def ds
+    where
+        def (name, args, e) = iConcat [ iStr name, iStr " = ", pprExpr e]
+
+{-
+>>> pprint sampleProgram
+>>> iDisplay $ pprExpr $ (\(a,b,c) -> c) (head sampleProgram)
+"main = double 21 ;\ndouble = x + x"
+"double 21"
 -}
