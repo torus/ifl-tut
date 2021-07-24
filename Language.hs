@@ -249,3 +249,21 @@ pprProgram ds
 "main = double 21 ;\ndouble = x + x"
 "double 21"
 -}
+
+-- 1.5.6
+
+iNum :: Int -> Iseqrep
+iNum n = iStr (show n)
+
+iFWNum :: Int -> Int -> Iseqrep
+iFWNum width n
+  = iStr (space (width - length digits) ++ digits)
+    where
+        digits = show n
+
+iLayn :: [Iseqrep] -> Iseqrep
+iLayn seqs = iConcat (zipWith (curry lay_item) [1..] seqs)
+    where
+        lay_item (n, seq)
+          = iConcat [ iFWNum 4 n, iStr ") ", iIndent seq, iNewline]
+
