@@ -327,26 +327,27 @@ iLayn seqs = iConcat (zipWith (curry lay_item) [1..] seqs)
 syntax :: [Token] -> CoreProgram
 syntax = undefined
 
-parse :: String -> CoreProgram
-parse = syntax . clex
+-- parse :: String -> CoreProgram
+-- parse = syntax . clex
 
-type Token = String
+type Token = (Int, String)
+--type Token = String
 
-clex :: [Char] -> [[Char]]
-clex ('-' : '-' : cs) = clex (dropWhile ('\n' /=) cs)
-clex (c:cs)
-  | isWhiteSpace c = clex cs
-  | isDigit c      = numToken : clex restCs'
-  | isAlpha c      = varToken : clex restCs
-  | take 2 (c:cs) `elem` twoCharOps = opToken : clex restCs''
-  | otherwise      = [c] : clex cs
+clex :: Int -> [Char] -> [Token]
+clex n ('-' : '-' : cs) = clex n (dropWhile ('\n' /=) cs)
+clex n (c:cs)
+  | isWhiteSpace c = clex n cs
+  | isDigit c      = (n, numToken) : clex n restCs'
+  | isAlpha c      = (n, varToken) : clex n restCs
+  | take 2 (c:cs) `elem` twoCharOps = (n, opToken) : clex n restCs''
+  | otherwise      = (n, [c]) : clex n cs
       where
         (idCs, restCs)   = span isIdChar cs
         varToken         = c : idCs
         (numCs, restCs') = span isDigit cs
         numToken         = c : numCs
         (opToken, restCs'') = ([c, head cs], tail cs)
-clex []            = []
+clex _ []            = []
 
 {-
 >>> clex "abc xyz 1bb == 123 /= x"
@@ -380,3 +381,137 @@ isIdChar c     = isAlpha c || isDigit c || c == '_'
 -- Ex. 1.10
 twoCharOps :: [String]
 twoCharOps = ["==", "/=", ">=", "<=", "->", "&&", "||"]
+
+-- 1.6.2
+{- エラーも返せる -}
+type Parser a = [Token] -> [(a, [Token])]
+
+pLit :: String -> Parser String
+{-
+pLit s ((_, tok) : toks)
+  | s == tok = [(s, toks)]
+  | otherwise = []
+pLit _ []     = []
+-}
+
+pVar :: Parser String
+{-
+pVar [] = []
+pVar ((_, tok) : toks) = case tok of
+  c:_ | isAlpha c -> [(tok, toks)]
+-}
+
+pAlt :: Parser a -> Parser a -> Parser a
+pAlt p1 p2 toks = p1 toks ++ p2 toks
+
+pHelloOrGoodbye :: Parser String
+pHelloOrGoodbye = pLit "hello" `pAlt` pLit "goodbye"
+
+pThen :: (a -> b -> c) -> Parser a -> Parser b -> Parser c
+pThen combine p1 p2 toks
+  = [ (combine v1 v2, toks2) | (v1, toks1) <- p1 toks
+                             , (v2, toks2) <- p2 toks1 ]
+
+pGreeting :: Parser (String, String)
+{-
+pGreeting = pThen keepFirst
+                  (pThen mkPair pHelloOrGoodbye pVar)
+                  (pLit "!")
+  where
+    keepFirst = const
+    mkPair    = (,)
+-}
+
+pGreeting = pThen3 mkGreeting
+              pHelloOrGoodbye
+              pVar
+              (pLit "!")
+            where
+              mkGreeting hg name exlamation = (hg, name)
+
+pThen3 :: (a -> b -> c -> d) -> Parser a -> Parser b -> Parser c -> Parser d
+pThen3 f pa pb pc toks
+  = [ (f v1 v2 v3, toks2) | (v1, toks1) <- pa toks
+                          , (v2, toks2) <- pb toks1
+                          , (v3, toks3) <- pc toks2]
+
+{-
+>>> pGreeting [(0, "goodbye"), (0, "James"), (0, "!")]
+[(("goodbye","James"),[(0,"!")])]
+-}
+
+{-
+pZeroOrMore :: Parser a -> Parser [a]
+pZeroOrMore p = pOneOrMore p `pAlt` pEmpty []
+-}
+
+pEmpty :: a -> Parser a
+pEmpty x toks = [(x, toks)]
+
+pOneOrMore :: Parser a -> Parser [a]
+pOneOrMore p = pThen (:) p (pZeroOrMore p)
+
+-- Ex. 1.14
+pApply :: Parser a -> (a -> b) -> Parser b
+pApply p f toks
+  = [ (f x, toks') | (x, toks') <- p toks]
+
+(<$$>) :: (a -> b) -> Parser a -> Parser b
+(<$$>) = flip pApply
+
+(<**>) :: Parser (a -> b) -> Parser a -> Parser b
+(<**>) = pap
+
+(<**) :: Parser c -> Parser b -> Parser c
+(<**) = pThen const
+
+(**>) :: Parser a -> Parser c -> Parser c
+(**>) = pThen (\_ y -> y)
+
+pOneOrMoreWithSep :: Parser a -> Parser b -> Parser [a]
+pOneOrMoreWithSep p sep
+  = (:) <$$> p <**> pOneOrMore (sep **> p)
+--  = pThen (:) p $ pOneOrMore (sep `op` p)
+--    where
+--      op = pThen (\_ a -> a)
+
+pap :: Parser (a -> b) -> Parser a -> Parser b
+pap pf pa toks = [ (f x, toks2) | (f, toks1) <- pf toks
+                                , (x, toks2) <- pa toks1 ]
+
+-- satisfy
+pSat :: (String -> Bool) -> Parser String
+pLit s = pSat (s ==)
+
+-- Ex. 1.16
+pSat pre toks = case toks of
+  ((_, t) : toks') | pre t -> [(t, toks')]
+  _                        -> []
+
+-- Ex. 1.17
+pVar = pSat (\tok -> isAlpha (head tok) && tok `notElem` keywords)
+
+keywords :: [String]
+keywords = ["let", "letrec", "in", "case", "of", "Pack"]
+
+-- Ex. 1.18
+pNum :: Parser Int
+pNum = read <$$> pSat (all isDigit)
+
+-- Ex. 1.19
+{-
+後ろにかならず失敗するパーサがあるとすべての候補を試すことになる。
+>>> pOneOrMore (pLit "x") $ clex 1 "x x x x x"
+[(["x","x","x","x","x"],[])]
+-}
+
+pZeroOrMore :: Parser a -> Parser [a]
+pZeroOrMore p = pOneOrMore p `pAltL` pEmpty []
+
+pAltL :: Parser a -> Parser a -> Parser a
+pAltL p1 p2 toks = p1 toks <+ p2 toks
+  where
+    [] <+ ys = ys
+    xs <+ _  = xs
+
+infixr 5 `pAltL`
