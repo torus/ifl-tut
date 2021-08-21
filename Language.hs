@@ -89,9 +89,17 @@ type ScDefn a = (Name, [a], Expr a)
 type CoreScDefn = ScDefn Name
 
 sampleProgram =
-    [ ("main", [], EAp (EVar "double") (ENum 21))
-    , ("double", ["x"], EAp (EAp (EVar "+") (EVar "x")) (EVar "x"))
-    ]
+  [ ("main", [], EAp (EVar "double") (ENum 21))
+  , ("double", ["x"], EAp (EAp (EVar "+") (EVar "x")) (EVar "x"))
+  , ( "sumDoubles"
+    , ["x", "y"]
+    , ELet nonRecursive [
+        ("doubledX", EAp (EVar "double") (EVar "x"))
+        , ("doubledY", EAp (EVar "double") (EVar "y"))
+      ] (EAp (EAp (EVar "+") (EVar "doubledX")) (EVar "doubledY"))
+    )
+  ]
+
 
 preludeDefs :: CoreProgram
 preludeDefs =
@@ -229,7 +237,7 @@ flatten :: Int -> [(Iseqrep, Int)] -> String
 
 flatten col [] = ""
 flatten col ((INil, indent) : seqs) = flatten col seqs
-flatten col ((IStr s, indent) : seqs) = s ++ flatten col seqs
+flatten col ((IStr s, indent) : seqs) = s ++ flatten (col + length s) seqs
 flatten col ((IAppend seq1 seq2, indent) : seqs) = flatten col ((seq1, indent) : (seq2, indent) : seqs)
 flatten col ((INewline, indent) : seqs) = '\n' : (space indent ++ flatten indent seqs)
 flatten col ((IIndent seq, indent) : seqs) = flatten col ((seq, col) : seqs)
@@ -243,11 +251,11 @@ pprProgram ds
     where
         def (name, args, e) = iConcat [ iStr name, iStr " = ", pprExpr e]
 
+test :: IO ()
+test = do { putStrLn $ pprint sampleProgram }
+
 {-
->>> pprint sampleProgram
->>> iDisplay $ pprExpr $ (\(a,b,c) -> c) (head sampleProgram)
-"main = double 21 ;\ndouble = x + x"
-"double 21"
+>>> test
 -}
 
 -- 1.5.6
