@@ -324,11 +324,9 @@ iLayn seqs = iConcat (zipWith (curry lay_item) [1..] seqs)
 -- 1.6
 
 -- clex :: String -> [Token]
-syntax :: [Token] -> CoreProgram
-syntax = undefined
 
--- parse :: String -> CoreProgram
--- parse = syntax . clex
+parse :: String -> CoreProgram
+parse = syntax . clex 1
 
 type Token = (Int, String)
 --type Token = String
@@ -440,10 +438,8 @@ pThen3 f pa pb pc toks
 [(("goodbye","James"),[(0,"!")])]
 -}
 
-{-
 pZeroOrMore :: Parser a -> Parser [a]
 pZeroOrMore p = pOneOrMore p `pAlt` pEmpty []
--}
 
 pEmpty :: a -> Parser a
 pEmpty x toks = [(x, toks)]
@@ -467,6 +463,8 @@ pApply p f toks
 
 (**>) :: Parser a -> Parser c -> Parser c
 (**>) = pThen (\_ y -> y)
+
+infixl 4 <$$>, <**>, <**, **>
 
 pOneOrMoreWithSep :: Parser a -> Parser b -> Parser [a]
 pOneOrMoreWithSep p sep
@@ -502,16 +500,119 @@ pNum = read <$$> pSat (all isDigit)
 {-
 後ろにかならず失敗するパーサがあるとすべての候補を試すことになる。
 >>> pOneOrMore (pLit "x") $ clex 1 "x x x x x"
+[(["x","x","x","x","x"],[]),(["x","x","x","x"],[(1,"x")]),(["x","x","x"],[(1,"x"),(1,"x")]),(["x","x"],[(1,"x"),(1,"x"),(1,"x")]),(["x"],[(1,"x"),(1,"x"),(1,"x"),(1,"x")])]
+>>> pOneOrMoreL (pLit "x") $ clex 1 "x x x x x"
 [(["x","x","x","x","x"],[])]
+
 -}
 
-pZeroOrMore :: Parser a -> Parser [a]
-pZeroOrMore p = pOneOrMore p `pAltL` pEmpty []
+pOneOrMoreL :: Parser a -> Parser [a]
+pOneOrMoreL p = pThen (:) p (pZeroOrMoreL p)
 
+pZeroOrMoreL :: Parser a -> Parser [a]
+pZeroOrMoreL p = pOneOrMoreL p `pAltL` pEmpty []
+
+{- munch の動き -}
 pAltL :: Parser a -> Parser a -> Parser a
 pAltL p1 p2 toks = p1 toks <+ p2 toks
   where
     [] <+ ys = ys
     xs <+ _  = xs
 
-infixr 5 `pAltL`
+infixr 3 `pAlt`, `pAltL`
+
+-- 1.6.4
+
+syntax :: [Token] -> CoreProgram
+syntax = takeFirstParse . pProgram
+  where
+    takeFirstParse ((prog, []) : others) = prog
+    takeFirstParse (parse      : others) = takeFirstParse others
+    takeFirstParse other                 = error "syntax error"
+
+pProgram :: Parser CoreProgram
+pProgram = pOneOrMoreWithSep pSc (pLit ";")
+
+pSc :: Parser CoreScDefn
+pSc = pThen4 mkSc pVar (pZeroOrMore pVar) (pLit "=") pExpr
+
+pThen4 :: (a -> b -> c -> d -> e) -> Parser a -> Parser b -> Parser c -> Parser d -> Parser e
+pThen4 f pa pb pc pd toks
+  = [ (f v1 v2 v3 v4, toks4) | (v1, toks1) <- pa toks
+                             , (v2, toks2) <- pb toks1
+                             , (v3, toks3) <- pc toks2
+                             , (v4, toks4) <- pd toks3]
+
+-- Ex. 1.20
+mkSc :: Name -> [Name] -> a -> Expr Name -> CoreScDefn
+mkSc fun args _ expr = (fun, args, expr)
+
+-- Ex. 1.21
+pPack
+  = pEmpty EConstr <** pLit "Pack" <**
+    pLit "{" <**>
+    pNum <** pLit "," <**> pNum <**
+    pLit "}"
+
+pAexpr
+  = EVar <$$> pVar
+    `pAlt`
+    ENum <$$> pNum
+    `pAlt`
+    pPack
+    `pAlt`
+    pLit "(" **> pExpr <** pLit ")"
+
+{-
+>>> pPack $ clex 1 "Pack{1,2}"
+[(EConstr 1 2,[])]
+>>> pAexpr $ clex 1 "(1)"
+>>> pAexpr $ clex 1 "(x)"
+>>> pAexpr $ clex 1 "((x))"
+[(ENum 1,[])]
+[(EVar "x",[])]
+[(EVar "x",[])]
+-}
+
+pDefn = pThen3 (\n _ e -> (n, e)) pVar (pLit "=") pExpr
+
+pLet :: Parser CoreExpr
+pLet
+  = ELet <$$>
+    (pLit "letrec" **> pEmpty True
+     `pAlt`
+     (pLit "let"   **> pEmpty False)) <**>
+    pOneOrMore pDefn <**
+    pLit "in" <**>
+    pExpr
+
+pAlter :: Parser CoreAlter
+pAlter
+  = pEmpty (,,) <** pLit "<" <**> pNum <** pLit ">" <**>
+    pZeroOrMore pVar <**
+    pLit "->" <**>
+    pExpr
+
+pAlters :: Parser [Alter Name]
+pAlters = pOneOrMoreWithSep pAlter (pLit ";")
+
+pCase
+  = pEmpty ECase <** pLit "case" <**>
+    pExpr <** pLit "of" <**>
+    pAlters
+
+pExpr :: Parser CoreExpr
+pExpr = pLet `pAlt` pCase `pAlt` pAexpr
+
+_example_in =
+  [ "f = 3;"
+  , "g x y = let z = x in z;"
+  , "h x = case (let y = x in y) of"
+  , "        <1> -> 2 ;"
+  , "        <2> -> 5"
+  ]
+
+{-
+>>> parse "g x y = let z = x in z"
+syntax error
+-}
