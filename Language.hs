@@ -182,12 +182,16 @@ pprExpr (EVar v)    = iStr v
 pprExpr (EAp (EAp (EVar "+") e1) e2)
   = iConcat [ pprAExpr e1, iStr " + ", pprAExpr e2 ]
 
-pprExpr (EAp e1 e2) = pprExpr e1 `iAppend` iStr " " `iAppend` pprAExpr e2
+pprExpr (EAp e1 e2)
+  = iConcat [ pprExpr e1
+            , iStr " "
+            , pprAExpr e2
+            ]
 
 pprExpr (ELet isrec defns expr)
   = iConcat [ iStr keyword
             , iNewline
-            , iStr " "
+            , iStr "    "
             , iIndent (pprDefns defns)
             , iNewline
             , iStr "in "
