@@ -41,6 +41,8 @@ Miranda 風
 
 module Language where
 import Utils
+import CoreStats (CoreStats(cs_jb))
+import Data.Char
 
 data Expr a
     = EVar Name
@@ -317,3 +319,64 @@ iLayn seqs = iConcat (zipWith (curry lay_item) [1..] seqs)
         lay_item (n, seq)
           = iConcat [ iFWNum 4 n, iStr ") ", iIndent seq, iNewline]
 
+{- Layn の Mirand のプレリュードにあるらしい -}
+
+-- 1.6
+
+-- clex :: String -> [Token]
+syntax :: [Token] -> CoreProgram
+syntax = undefined
+
+parse :: String -> CoreProgram
+parse = syntax . clex
+
+type Token = String
+
+clex :: [Char] -> [[Char]]
+clex ('-' : '-' : cs) = clex (dropWhile ('\n' /=) cs)
+clex (c:cs)
+  | isWhiteSpace c = clex cs
+  | isDigit c      = numToken : clex restCs'
+  | isAlpha c      = varToken : clex restCs
+  | take 2 (c:cs) `elem` twoCharOps = opToken : clex restCs''
+  | otherwise      = [c] : clex cs
+      where
+        (idCs, restCs)   = span isIdChar cs
+        varToken         = c : idCs
+        (numCs, restCs') = span isDigit cs
+        numToken         = c : numCs
+        (opToken, restCs'') = ([c, head cs], tail cs)
+clex []            = []
+
+{-
+>>> clex "abc xyz 1bb == 123 /= x"
+["abc","xyz","1","bb","==","123","/=","x"]
+-}
+
+type Loc = Int
+
+{-
+clex :: Loc -> String -> [Token]
+clex i ('-' : '-' : cs) = clex i (dropWhile ('\n' /=) cs)
+clex i (c1 : c2 : cs)
+  | isJust (lookup [c1, c2] binOps) = (i, [c1, c2]) : clex i cs
+clex i ('\n' : cs) = clex (succ i) cs
+clex i (c : cs)
+  | isDigit c = case span isDigit cs of
+      (ds, rs) -> (i, c : ds) : clex i rs
+  | isAlpha c = case span isIdChar cs of
+      (vs, rs) -> (i, c : vs) : clex i rs
+  | isSpace c = clex i cs
+  | otherwise = (i, [c]) : clex i cs
+clex _ "" = []
+-}
+
+isWhiteSpace :: Char -> Bool
+isIdChar     :: Char -> Bool
+
+isWhiteSpace c = c `elem` " \t\n"
+isIdChar c     = isAlpha c || isDigit c || c == '_'
+
+-- Ex. 1.10
+twoCharOps :: [String]
+twoCharOps = ["==", "/=", ">=", "<=", "->", "&&", "||"]
