@@ -185,23 +185,40 @@ pprExpr (EAp (EAp (EVar "+") e1) e2)
 pprExpr (EAp e1 e2) = pprExpr e1 `iAppend` iStr " " `iAppend` pprAExpr e2
 
 pprExpr (ELet isrec defns expr)
-  = iConcat [ iStr keyword, iNewline
-            , iStr " ", iIndent (pprDefns defns), iNewline
-            , iStr "in ", pprExpr expr
+  = iConcat [ iStr keyword
+            , iNewline
+            , iStr " "
+            , iIndent (pprDefns defns)
+            , iNewline
+            , iStr "in "
+            , pprExpr expr
             ]
     where
         keyword | not isrec = "let"
                 | otherwise = "letrec"
 
 pprExpr (ECase e as)
-  = iStr "case" `iAppend` pprExpr e `iAppend` iConcat (map alter as)
+  = iConcat [ iStr "case"
+            , pprExpr e
+            , iConcat (map alter as)
+            ]
     where
-        alter (n, args, e) = iStr (show n) `iAppend` iInterleave (iStr " ") (map iStr args) `iAppend` pprExpr e
+        alter (n, args, e)
+         = iConcat [ iStr (show n)
+                   , iInterleave (iStr " ") (map iStr args)
+                   , pprExpr e
+                   ]
 
-pprExpr (EConstr n m) = iStr "Pack{" `iAppend` iInterleave (iStr ",") [iStr (show n), iStr (show m)] `iAppend` iStr "}"
-pprExpr (ELam as e) = iStr "\\" `iAppend` iInterleave (iStr " ") (map iStr as) `iAppend` iStr " . " `iAppend` pprExpr e
-
-
+pprExpr (EConstr n m)
+  = iConcat [ iStr "Pack{"
+            , iInterleave (iStr ",") [iStr (show n), iStr (show m)]
+            , iStr "}"]
+pprExpr (ELam as e)
+  = iConcat [ iStr "\\"
+            , iInterleave (iStr " ") (map iStr as)
+            , iStr " . "
+            , pprExpr e
+            ]
 
 pprDefns :: [(Name, CoreExpr)] -> Iseqrep
 pprDefns defns = iInterleave sep (map pprDefn defns)
