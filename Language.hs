@@ -202,14 +202,19 @@ pprExpr (ELet isrec defns expr)
                 | otherwise = "letrec"
 
 pprExpr (ECase e as)
-  = iConcat [ iStr "case"
+  = iConcat [ iStr "case "
             , pprExpr e
-            , iConcat (map alter as)
+            , iStr " of"
+            , iNewline
+            , iStr "    "
+            , iIndent $ iInterleave sep (map alter as)
             ]
     where
+        sep = iConcat [ iStr " ;", iNewline]
         alter (n, args, e)
-         = iConcat [ iStr (show n)
-                   , iInterleave (iStr " ") (map iStr args)
+         = iConcat [ iStr "<", iStr (show n), iStr "> "
+                   , iConcat $ map (\a -> iConcat [iStr a, iStr " "]) args
+                   , iStr "-> "
                    , pprExpr e
                    ]
 
@@ -223,6 +228,22 @@ pprExpr (ELam as e)
             , iStr " . "
             , pprExpr e
             ]
+
+sampleProgramCase :: [([Char], [[Char]], Expr [Char])]
+sampleProgramCase
+  = [ ( "isRed", ["c"]
+      , ECase (EVar "c") [ (1, [], EVar "True")
+                         , (2, [], EVar "False")
+                         , (3, [], EVar "False")
+                         ])
+    , ( "depth", ["t"]
+      , ECase (EVar "t") [ (1, ["n"], ENum 0)
+                         , (2, ["t1", "t2"]
+                           , EAp (EAp (EVar "+") (ENum 1))
+                              (EAp (EAp (EVar "max") (EAp (EVar "depth") (EVar "t1")))
+                                   (EAp (EVar "depth") (EVar "t2"))))
+                         ])
+  ]
 
 pprDefns :: [(Name, CoreExpr)] -> Iseqrep
 pprDefns defns = iInterleave sep (map pprDefn defns)
@@ -273,7 +294,7 @@ pprProgram ds
         def (name, args, e) = iConcat [ iStr name, iStr " = ", pprExpr e]
 
 test :: IO ()
-test = do { putStrLn $ pprint sampleProgram }
+test = do { putStrLn $ pprint sampleProgramCase }
 
 {-
 >>> test
