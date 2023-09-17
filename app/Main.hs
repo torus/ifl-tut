@@ -115,6 +115,72 @@ iLayn seqs = iConcat (map lay_item (zip [1 ..] seqs))
     lay_item (n, seq)
       = iConcat [ iFWNum 4 n, iStr ") ", iIndent seq, iNewline ]
 
+-- p. 35
+
+pZeroOrMore :: Parser a -> Parser [a]
+
+pZeroOrMore p = (pOneOrMore p) `pAlt` (pEmpty [])
+
+pEmpty :: a -> Parser a
+-- ex. 1.13
+pEmpty = undefined
+
+pOneOrMore :: Parser a -> Parser [a]
+-- ex. 1.13
+pOneOrMore = undefined
+
+-- p. 32
+type Parser a = [Token] -> [(a, [Token])]
+
+pLit :: String -> Parser String
+-- pLit s (tok : toks)
+--   | s == tok  = [(s, toks)]
+--   | otherwise = []
+-- pLit s []     = []
+
+-- p. 33
+pVar :: Parser String
+pVar [] = []
+
+pAlt :: Parser a -> Parser a -> Parser a
+pAlt p1 p2 toks = (p1 toks) ++ (p2 toks)
+
+-- p. 34
+pThen :: (a -> b -> c) -> Parser a -> Parser b -> Parser c
+
+pThen combine p1 p2 toks
+  = [ (combine v1 v2, toks2) | (v1, toks1) <- p1 toks,
+                               (v2, toks2) <- p2 toks1]
+
+-- p .36
+
+pApply :: Parser a -> (a -> b) -> Parser b
+-- ex. 1.14
+pApply = undefined
+
+pOneOrMoreWithSep :: Parser a -> Parser -> b -> Parser [a]
+-- ex. 1.15
+pOneOrMoreWithSep = undefined
+
+pSat :: (String -> Bool) -> Parser String
+-- ex. 1.16
+pSat = undefined
+
+pLit s = pSat (== s)
+
+-- p. 38
+
+syntax = take_first_parse . pProgram
+  where
+    take_first_parse ((prog, []) : others) = prog
+    take_first_parse (parse      : others) = take_first_parse others
+    take_first_parse other                 = error "Syntax error"
+
+pProgram :: Parser CoreProgram
+pProgram = pOneOrMoreWithSep pSc (pLit ";")
+
+pSc :: Parser CoreScDefn
+pSc = pThen4 mk_sc pVar (pZeroOrMore pVar) (pLit "=") pExpr
 
 -- p. 62
 
