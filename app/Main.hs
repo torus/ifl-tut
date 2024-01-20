@@ -129,6 +129,9 @@ pOneOrMore :: Parser a -> Parser [a]
 -- ex. 1.13
 pOneOrMore = undefined
 
+-- p. 30
+type Token = String
+
 -- p. 32
 type Parser a = [Token] -> [(a, [Token])]
 
@@ -141,6 +144,7 @@ pLit :: String -> Parser String
 -- p. 33
 pVar :: Parser String
 pVar [] = []
+pVar (var : toks) = [(var, toks)]
 
 pAlt :: Parser a -> Parser a -> Parser a
 pAlt p1 p2 toks = (p1 toks) ++ (p2 toks)
@@ -152,13 +156,20 @@ pThen combine p1 p2 toks
   = [ (combine v1 v2, toks2) | (v1, toks1) <- p1 toks,
                                (v2, toks2) <- p2 toks1]
 
+-- ex. 1.12
+pThen4 combine p1 p2 p3 p4 toks
+  = [ (combine v1 v2 v3 v4, toks4) | (v1, toks1) <- p1 toks
+                                   , (v2, toks2) <- p2 toks1
+                                   , (v3, toks3) <- p3 toks2
+                                   , (v4, toks4) <- p4 toks3 ]
+
 -- p .36
 
 pApply :: Parser a -> (a -> b) -> Parser b
 -- ex. 1.14
 pApply = undefined
 
-pOneOrMoreWithSep :: Parser a -> Parser -> b -> Parser [a]
+pOneOrMoreWithSep :: Parser a -> Parser b -> Parser [a]
 -- ex. 1.15
 pOneOrMoreWithSep = undefined
 
@@ -181,6 +192,12 @@ pProgram = pOneOrMoreWithSep pSc (pLit ";")
 
 pSc :: Parser CoreScDefn
 pSc = pThen4 mk_sc pVar (pZeroOrMore pVar) (pLit "=") pExpr
+
+-- ex. 1.20
+mk_sc v1 v2 v3 v4 = (v1, v2, v4)
+
+-- p. 39
+pExpr = (pOneOrMore pAexpr) $ pApply mk_ap_chain
 
 -- p. 62
 
@@ -277,9 +294,9 @@ fullRun = showFullResults . eval . compile . parse
 
 parse = undefined
 
-data Instruction = Take Int
-                 | Enter TimAMode
-                 | Push TimAMode
+-- data Instruction = Take Int
+--                  | Enter TimAMode
+--                  | Push TimAMode
 
 data TimAMode = Arg Int
               | Label [Char]
@@ -366,14 +383,14 @@ compile program
     initial_env      = [(name, Label name) | (name, args, body) <- sc_defs]
                        ++ [(name, Label name) | (name, code) <- compiledPrimitives]
 
-initialArgStack = []
+-- initialArgStack = []
 
 initialValueStack = DummyTimValueStack
 initialDump = DummyTimDump
 
 -- p. 162
 
-compiledPrimitives = []
+-- compiledPrimitives = []
 
 type TimCompilerEnv = [(Name, TimAMode)]
 
@@ -424,6 +441,10 @@ step ([Enter am], fptr, stack, vstack, dump, heap, cstore, stats)
 step ((Push am : instr), fptr, stack, vstack, dump, heap, cstore, stats)
   = (instr, fptr, amToClosure am fptr heap cstore : stack,
      vstack, dump, heap, cstore, stats)
+
+step ((PushV FramePtr : instr), (FrameInt n), stack, vstack, dump, heap
+     , cstore, stats)
+  = (instr, fptr, stack, n : vstack, dump, heap, cstore, stats)
 
 amToClosure :: TimAMode -> FramePtr -> TimHeap -> CodeStore -> Closure
 amToClosure (Arg n)      fptr heap cstore = fGet heap fptr n
@@ -539,10 +560,38 @@ showInstruction d (Take m)  = (iStr "Take ")  `iAppend` (iNum m)
 showInstruction d (Enter x) = (iStr "Enter ") `iAppend` (showArg d x)
 showInstruction d (Push x)  = (iStr "Push ")  `iAppend` (showArg d x)
 
+showInstruction d (PushV x)  = (iStr "PushV ")  `iAppend` (showArg d x)
+showInstruction d (Return)   = (iStr "Return")
+showInstruction d (Op x)     = (iStr "Op ")  `iAppend` (showArg d x)
+showInstruction d (Cond i1 i2) = (iStr "Cond ") `iAppend` (showArg d i1)
+                                 `iAppend` (showArg d i2)
+
+
 showArg d (Arg m)      = (iStr "Arg ")     `iAppend` (iNum m)
 showArg d (Code il)    = (iStr "Code ")    `iAppend` (showInstructions d il)
 showArg d (Label s)    = (iStr "Label ")   `iAppend` (iStr s)
 showArg d (IntConst n) = (iStr "IntConst") `iAppend` (iNum n)
 
 nTerse = 3
+
+-- p. 171
+
+data Instruction = Take Int
+                 | Push TimAMode
+                 | PushV ValueAMode
+                 | Enter TimAMode
+                 | Return
+                 | Op Op
+                 | Cond [Instruction] [Instruction]
+data Op = Add | Sub | Mult | Div | Neg
+        | Gr | GrEq | Lt | LtEq | Eq | NotEq
+        deriving (Eq) -- KH
+
+data ValueAMode = FramePtr
+                | IntVConst Int
+
+compiledPrimitives = []
+
+
+initialArgStack = [([], FrameNull)]
 
